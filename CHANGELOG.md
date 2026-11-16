@@ -4,6 +4,20 @@ What changed in each release of Jacarium. The app shows the same notes
 under What's New; `npm run release` adds each new version at the top
 (see [docs/HOW_TO_RELEASE.md](docs/HOW_TO_RELEASE.md)).
 
+## What's New in v4.4.4
+
+_2026-11-16_
+
+### [UI]
+
+Right-clicking a tab near the right edge of a long tab bar no longer blanks the app on a 100% display (common on Linux and external monitors): the tab menu kept re-measuring itself by a fraction of a pixel at the default 90% zoom and never settled. The tab menus, the template menu, the floating editor settings menu and the rail More menu now use the shared menu placement, which cannot loop
+
+### [SECURITY]
+
+Caddy, the web server in the container image, is built with golang.org/x/crypto v0.59.0 (GO-2026-5932) and OpenTelemetry 1.47.0 (GHSA-q7gw-24fr-5p69, CVE-2026-128085); neither affected Jacarium (no OpenPGP use, tracing not enabled), and the findings are gone
+
+krb5-libs and rpm in the base image: Red Hat has published fixes (RHSA-2026:99715, RHSA-2026:99593) that the UBI repositories do not serve yet; the image runs no Kerberos server or admin tools and has no rpmbuild, so Jacarium is not affected, documented in the VEX, and the packages update as soon as the fixes are served
+
 ## What's New in v4.4.3
 
 _2026-11-13_
@@ -15,6 +29,7 @@ soupsieve 4.0.1, the CSS selector engine Beautiful Soup uses (GHSA-mmhr-3c5m-f64
 ### [MISC]
 
 4.4.3 replaces 4.4.2, which was never published: it carries everything listed for 4.4.2 - the RHEL 9.9 base image, Caddy built with Go 1.27.4, mount and umount without setuid, one window per profile, the busy-database message and the error boundaries
+
 
 ## What's New in v4.4.2
 

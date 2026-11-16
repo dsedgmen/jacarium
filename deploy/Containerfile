@@ -113,6 +113,18 @@ ARG GOJOSE_VERSION=v4.1.6
 # klauspost/compress v1.20.2 (2026-10-12; sum.golang.org record 68513226): GO-2026-6865 / CVE-2026-116591, a panic
 # on two-block frames in its fse/huff0 (zstd) code, reported against the v1.20.1 Caddy 2.11.8 pulls in
 ARG KCOMPRESS_VERSION=v1.20.2
+# golang.org/x/crypto v0.59.0 (2026-11-11; sum.golang.org record 71189631): GO-2026-5932, the unmaintained
+# x/crypto/openpgp (which Caddy does not link) flagged on every x/crypto before it - taken at 4.7 days under the
+# maintainer's explicit exception to the seven-day rule (docs/security/urgent-updates.md, 2026-11-16)
+ARG XCRYPTO_VERSION=v0.59.0
+# OpenTelemetry 1.47.0 (2026-10-02): GHSA-q7gw-24fr-5p69 / CVE-2026-128085 (AttributeValueLengthLimit bypassed by
+# U+FFFD runes) in otel/sdk, otel/sdk/log and otel/trace 1.46.0. The whole release set moves together, so the
+# build graph has no version skew: the 1.47.0 modules, the log exporters (0.23.0), the Prometheus exporter
+# (0.69.0) and the contrib otelhttp instrumentation (0.72.0) of the same day
+ARG OTEL_VERSION=v1.47.0
+ARG OTEL_LOG_EXPORTERS_VERSION=v0.23.0
+ARG OTEL_PROMETHEUS_VERSION=v0.69.0
+ARG OTEL_CONTRIB_VERSION=v0.72.0
 WORKDIR /build
 ENV CGO_ENABLED=0 GOFLAGS=-mod=mod GOTOOLCHAIN=local
 RUN printf '%s\n' 'package main' '' 'import (' '	caddycmd "github.com/caddyserver/caddy/v2/cmd"' '' '	_ "github.com/caddyserver/caddy/v2/modules/standard"' ')' '' 'func main() {' '	caddycmd.Main()' '}' > main.go \
@@ -122,16 +134,35 @@ RUN printf '%s\n' 'package main' '' 'import (' '	caddycmd "github.com/caddyserve
  && go get "github.com/go-chi/chi/v5@${CHI_VERSION}" \
  && go get "github.com/go-jose/go-jose/v4@${GOJOSE_VERSION}" \
  && go get "github.com/klauspost/compress@${KCOMPRESS_VERSION}" \
+ && go get "golang.org/x/crypto@${XCRYPTO_VERSION}" \
+ && O=go.opentelemetry.io/otel && go get \
+      "$O@${OTEL_VERSION}" "$O/trace@${OTEL_VERSION}" "$O/metric@${OTEL_VERSION}" "$O/log@${OTEL_VERSION}" \
+      "$O/sdk@${OTEL_VERSION}" "$O/sdk/metric@${OTEL_VERSION}" "$O/sdk/log@${OTEL_VERSION}" \
+      "$O/exporters/otlp/otlptrace@${OTEL_VERSION}" "$O/exporters/otlp/otlptrace/otlptracegrpc@${OTEL_VERSION}" "$O/exporters/otlp/otlptrace/otlptracehttp@${OTEL_VERSION}" \
+      "$O/exporters/otlp/otlpmetric/otlpmetricgrpc@${OTEL_VERSION}" "$O/exporters/otlp/otlpmetric/otlpmetrichttp@${OTEL_VERSION}" \
+      "$O/exporters/stdout/stdouttrace@${OTEL_VERSION}" "$O/exporters/stdout/stdoutmetric@${OTEL_VERSION}" \
+      "$O/exporters/otlp/otlplog/otlploggrpc@${OTEL_LOG_EXPORTERS_VERSION}" "$O/exporters/otlp/otlplog/otlploghttp@${OTEL_LOG_EXPORTERS_VERSION}" "$O/exporters/stdout/stdoutlog@${OTEL_LOG_EXPORTERS_VERSION}" \
+      "$O/exporters/prometheus@${OTEL_PROMETHEUS_VERSION}" \
+      "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp@${OTEL_CONTRIB_VERSION}" \
  && go mod tidy \
  && go build -trimpath -buildvcs=false -ldflags '-s -w' -o /usr/bin/caddy . \
  && /usr/bin/caddy version \
  && /usr/bin/caddy version | grep -q "^${CADDY_VERSION} " \
- && /usr/bin/caddy build-info | grep -E "^(go|dep\s+golang.org/x/net|dep\s+github.com/go-chi/chi/v5|dep\s+github.com/go-jose/go-jose/v4|dep\s+github.com/klauspost/compress)\s" \
+ && /usr/bin/caddy build-info | grep -E "^(go|dep\s+golang.org/x/net|dep\s+github.com/go-chi/chi/v5|dep\s+github.com/go-jose/go-jose/v4|dep\s+github.com/klauspost/compress|dep\s+golang.org/x/crypto|dep\s+go.opentelemetry.io/[a-z/]+)\s" \
  && /usr/bin/caddy build-info | grep -qE "^go\s+go${GO_VERSION}\s*$" \
  && /usr/bin/caddy build-info | grep -qE "^dep\s+golang.org/x/net\s+${XNET_VERSION}\s" \
  && /usr/bin/caddy build-info | grep -qE "^dep\s+github.com/go-chi/chi/v5\s+${CHI_VERSION}\s" \
  && /usr/bin/caddy build-info | grep -qE "^dep\s+github.com/go-jose/go-jose/v4\s+${GOJOSE_VERSION}\s" \
- && /usr/bin/caddy build-info | grep -qE "^dep\s+github.com/klauspost/compress\s+${KCOMPRESS_VERSION}\s"
+ && /usr/bin/caddy build-info | grep -qE "^dep\s+github.com/klauspost/compress\s+${KCOMPRESS_VERSION}\s" \
+ && /usr/bin/caddy build-info | grep -qE "^dep\s+golang.org/x/crypto\s+${XCRYPTO_VERSION}\s" \
+ && ! /usr/bin/caddy build-info | grep -q "x/crypto/openpgp" \
+ && /usr/bin/caddy build-info | grep -qE "^dep\s+go.opentelemetry.io/otel\s+${OTEL_VERSION}\s" \
+ && /usr/bin/caddy build-info | grep -qE "^dep\s+go.opentelemetry.io/otel/trace\s+${OTEL_VERSION}\s" \
+ && /usr/bin/caddy build-info | grep -qE "^dep\s+go.opentelemetry.io/otel/sdk\s+${OTEL_VERSION}\s" \
+ && /usr/bin/caddy build-info | grep -qE "^dep\s+go.opentelemetry.io/otel/sdk/log\s+${OTEL_VERSION}\s" \
+ && /usr/bin/caddy build-info | grep -qE "^dep\s+go.opentelemetry.io/otel/sdk/metric\s+${OTEL_VERSION}\s" \
+ && /usr/bin/caddy build-info | grep -qE "^dep\s+go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp\s+${OTEL_CONTRIB_VERSION}\s" \
+ && test "$(/usr/bin/caddy build-info | grep -E "^dep\s+go.opentelemetry.io/otel(/[a-z/]+)?\s" | grep -cvE "\s(${OTEL_VERSION}|${OTEL_LOG_EXPORTERS_VERSION}|${OTEL_PROMETHEUS_VERSION})\s")" = 0
 
 # ---------------------------------------------------------------------------
 # Runtime - ubi9-minimal 9.9-1794467051 (2026-11-12 09:29 UTC, RHEL 9.9, the

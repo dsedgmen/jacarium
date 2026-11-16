@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Search, FileText, Activity, Workflow, FileText as NotesIcon, Bot, Brain, Bell, MessageSquare, Menu, Trello, CheckSquare, Calendar, Wrench, MoreHorizontal, ExternalLink, PanelLeft, PanelRight, Trash2 } from 'lucide-react';
 import { isDesktopApp, openStandalonePage } from '../utils/platform';
 import BrandMark from '../brand/BrandMark';
@@ -193,23 +193,10 @@ export default function CompactSidebar({ currentPage, onPageChange }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showUtilityMoreMenu]);
 
-  // Keep the utility More menu on-screen: nudge it left/up if it would overflow
-  // the viewport's right or bottom edge, measured against its actual rendered size.
-  useLayoutEffect(() => {
-    if (!showUtilityMoreMenu || !utilityMoreMenuRef.current) return;
-    const menuRect = utilityMoreMenuRef.current.getBoundingClientRect();
-    const margin = 8;
-    let { left, top } = utilityMoreMenuPos;
-    if (menuRect.right > window.innerWidth - margin) {
-      left = Math.max(margin, left - (menuRect.right - window.innerWidth + margin));
-    }
-    if (menuRect.bottom > window.innerHeight - margin) {
-      top = Math.max(margin, top - (menuRect.bottom - window.innerHeight + margin));
-    }
-    if (left !== utilityMoreMenuPos.left || top !== utilityMoreMenuPos.top) {
-      setUtilityMoreMenuPos({ left, top });
-    }
-  }, [showUtilityMoreMenu, utilityMoreMenuPos]);
+  // Inside the window through the shared popup placement (src/hooks/usePopupPosition.js): it measures the rendered
+  // menu and writes its left / top directly. Never position state set from a measurement: at a fractional layout
+  // scale the measured overflow never reaches zero and each pass sets a new position (React's update-depth error).
+  usePopupPosition(utilityMoreMenuRef, { open: showUtilityMoreMenu, anchor: () => ({ left: utilityMoreMenuPos.left, top: utilityMoreMenuPos.top }), deps: [utilityMoreMenuPos.left, utilityMoreMenuPos.top], side: 'right', gap: 0 });   // beside the rail's button, at its top, as before
 
   // Calculate how many nav and utility items can fit based on available height
   useEffect(() => {

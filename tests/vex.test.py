@@ -136,7 +136,7 @@ try:
     check('every affected decision says what fix is pending', all('pending' in (d.get('action') or '').lower() or 'upgrade' in (d.get('action') or '').lower() for d in by_status.get('affected', [])), [d['id'] for d in by_status.get('affected', [])])
     # the Go toolchain and x/net entries (chi and go-jose, other Go modules Caddy pulls in, have their own checks below)
     XNET_HTML = ('GO-2026-6860', 'GO-2026-6866')   # the 3.5.2 x/net html pair has its own checks below
-    caddy = [d for d in decisions if any('golang' in c for c in d.get('components') or []) and not any('go-chi' in c or 'go-jose' in c for c in d.get('components') or []) and d['id'] not in XNET_HTML]
+    caddy = [d for d in decisions if any('golang' in c for c in d.get('components') or []) and not any('go-chi' in c or 'go-jose' in c or 'opentelemetry' in c or 'x/crypto' in c for c in d.get('components') or []) and d['id'] not in XNET_HTML]
     server_side = [d for d in caddy if d['status'] == 'affected']
     fixed = [d for d in caddy if d['status'] == 'fixed']
     client_side = [d for d in caddy if d['status'] == 'not_affected']
@@ -185,6 +185,25 @@ try:
           sorted((d['id'], d['status'], tuple(d.get('versions') or [])) for d in xnet) == [('GO-2026-6860', 'affected', ('<3.5.2',)), ('GO-2026-6860', 'fixed', ('>=3.5.2',)), ('GO-2026-6866', 'affected', ('<3.5.2',)), ('GO-2026-6866', 'fixed', ('>=3.5.2',))]
           and all(any(a.startswith('CVE-') for a in d.get('aliases') or []) for d in xnet) and all('0.62.0' in (d.get('notes') or d.get('action') or '') for d in xnet), xnet)
     check('deploy/Containerfile builds Caddy with x/net 0.62.0 and checks it in caddy build-info', 'ARG XNET_VERSION=v0.62.0' in containerfile and 'dep\\s+golang.org/x/net\\s+${XNET_VERSION}' in containerfile)
+    # 4.4.4: OpenTelemetry 1.47.0 and x/crypto v0.59.0 in the Caddy build; krb5-libs and rpm wait for the UBI repositories
+    otel = sorted((d['status'], tuple(d.get('versions') or []), d.get('justification')) for d in decisions if d['id'] == 'CVE-2026-128085')
+    check('OpenTelemetry GHSA-q7gw-24fr-5p69 / CVE-2026-128085: not_affected before 4.4.4 (no tracing in the Caddyfile), fixed from 4.4.4 with the 1.47.0 set',
+          otel == [('fixed', ('>=4.4.4',), None), ('not_affected', ('<4.4.4',), 'vulnerable_code_not_in_execute_path')]
+          and all('GHSA-q7gw-24fr-5p69' in (d.get('aliases') or []) for d in decisions if d['id'] == 'CVE-2026-128085')
+          and 'tracing' not in open(os.path.join(REPO, 'deploy', 'Caddyfile')).read().lower(), otel)
+    pgp = sorted((d['status'], tuple(d.get('versions') or []), d.get('justification')) for d in decisions if d['id'] == 'GO-2026-5932')
+    check('x/crypto GO-2026-5932 (openpgp): not_affected before 4.4.4 (the package is not linked), fixed from 4.4.4 with v0.59.0',
+          pgp == [('fixed', ('>=4.4.4',), None), ('not_affected', ('<4.4.4',), 'vulnerable_code_not_present')], pgp)
+    check('deploy/Containerfile builds Caddy with x/crypto v0.59.0 and the OpenTelemetry 1.47.0 set, both checked in caddy build-info (no openpgp linked, no otel module left behind)',
+          'ARG XCRYPTO_VERSION=v0.59.0' in containerfile and 'go get "golang.org/x/crypto@${XCRYPTO_VERSION}"' in containerfile and 'dep\\s+golang.org/x/crypto\\s+${XCRYPTO_VERSION}' in containerfile
+          and '! /usr/bin/caddy build-info | grep -q "x/crypto/openpgp"' in containerfile
+          and 'ARG OTEL_VERSION=v1.47.0' in containerfile and '"$O/sdk@${OTEL_VERSION}"' in containerfile and '"$O/sdk/log@${OTEL_VERSION}"' in containerfile and '"$O/trace@${OTEL_VERSION}"' in containerfile
+          and 'dep\\s+go.opentelemetry.io/otel/sdk\\s+${OTEL_VERSION}' in containerfile and 'grep -cvE' in containerfile)
+    krb = [d for d in decisions if any('krb5-libs@1.21.1-10.el9_8.1' in c for c in d.get('components') or [])]
+    rpmd = [d for d in decisions if d['id'] in ('CVE-2026-84837', 'CVE-2026-78367')]
+    check('krb5-libs RHSA-2026:99715 (19 CVEs) and rpm RHSA-2026:99593 (2 CVEs): not_affected with a reason each, no version bound while the UBI repositories do not serve the fixed builds',
+          len(krb) == 19 and len(rpmd) == 2 and all(d['status'] == 'not_affected' and not d.get('versions') and d['justification'] in ('vulnerable_code_not_in_execute_path', 'vulnerable_code_not_present') and len(d.get('impact') or '') > 80 for d in krb + rpmd),
+          [(d['id'], d['status'], d.get('versions')) for d in krb + rpmd])
     check('deploy/Containerfile builds Caddy with go-jose v4.1.6 and checks it in caddy build-info', 'ARG GOJOSE_VERSION=v4.1.6' in containerfile and 'go get "github.com/go-jose/go-jose/v4@${GOJOSE_VERSION}"' in containerfile and 'dep\\s+github.com/go-jose/go-jose/v4\\s+${GOJOSE_VERSION}' in containerfile)
     # xz-libs 5.2.5-8.el9_8.1: raised by the microdnf layer up to 4.3.0; from 4.3.1 the pinned base carries it
     # itself (its comment names it) and the Grype gate would flag CVE-2026-34743 if a base ever brought it back

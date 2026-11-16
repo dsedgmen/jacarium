@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ErrorBoundary from './common/ErrorBoundary';
+import { usePopupPosition } from '../hooks/usePopupPosition.js';
 import { getBackendUrl, apiFetch } from '../utils/backendUrl';
 import { NO_AI_PROVIDER_MESSAGE, resolveAiRequestSettings, savedAiChatSettings } from '../utils/aiRequestSettings';
 import { createPortal } from 'react-dom';
@@ -106,22 +107,10 @@ export default function FloatingDraft({ instanceId = 'default' }) {
   const [editorSettingsPos, setEditorSettingsPos] = useState({ x: 0, y: 0 });
   const editorSettingsMenuRef = useRef(null);
 
-  // Reposition the editor settings menu after render using its real measured size
-  useLayoutEffect(() => {
-    if (!showEditorSettings || !editorSettingsMenuRef.current) return;
-    const menuRect = editorSettingsMenuRef.current.getBoundingClientRect();
-    const margin = 10;
-    let { x, y } = editorSettingsPos;
-    if (menuRect.right > window.innerWidth - margin) {
-      x = Math.max(margin, x - (menuRect.right - window.innerWidth + margin));
-    }
-    if (menuRect.bottom > window.innerHeight - margin) {
-      y = Math.max(margin, y - (menuRect.bottom - window.innerHeight + margin));
-    }
-    if (x !== editorSettingsPos.x || y !== editorSettingsPos.y) {
-      setEditorSettingsPos({ x, y });
-    }
-  }, [showEditorSettings, editorSettingsPos]);
+  // Inside the window through the shared popup placement (src/hooks/usePopupPosition.js): it measures the rendered
+  // menu and writes its left / top directly. Never position state set from a measurement: at a fractional layout
+  // scale the measured overflow never reaches zero and each pass sets a new position (React's update-depth error).
+  usePopupPosition(editorSettingsMenuRef, { open: showEditorSettings, anchor: () => ({ left: editorSettingsPos.x, top: editorSettingsPos.y }), deps: [editorSettingsPos.x, editorSettingsPos.y] });
 
   // Backend status
   const [backendStatus, setBackendStatus] = useState('checking');

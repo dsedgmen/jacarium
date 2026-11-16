@@ -801,3 +801,136 @@ remains is not-fixed or wont-fix upstream. The gate (`--ignore-states not-fixed,
 vulnerabilities found", exit 0 on both. tests/container_reproducible.test.py 17/17, tests/vex.test.py 41/41,
 self-hosting-examples 38/38, bundled_python_version 10/10, container-deploy (port 18444) green; lint 0 warnings;
 privacy scan clean.
+
+## 2026-11-16 - krb5-libs and rpm errata not yet in the UBI repositories (no lane upgrade possible); x/crypto v0.59.0 under the maintainer's exception; OpenTelemetry 1.47.0 for Caddy
+
+**What the scanners report (2026-11-16).** Grype (database built 2026-11-15) on the 4.4.3 images, both
+architectures: krb5-libs 1.21.1-10.el9_8.1 -> 1.21.1-10.el9_9.2 (RHSA-2026:99715, 2026-11-12: 19 CVEs, 14 High),
+rpm / rpm-libs 4.16.1.3-40.el9 -> 4.16.1.3-43.el9_9 (RHSA-2026:99593, 2026-11-12: CVE-2026-84837 and
+CVE-2026-78367, Medium) and GHSA-q7gw-24fr-5p69 on three OpenTelemetry modules in Caddy (Medium). Quay's Clair
+adds GO-2026-5932 on golang.org/x/crypto v0.58.0. ubi9-minimal 9.9-1794467051 is still the newest base and
+carries the old builds.
+
+**1. krb5-libs and rpm: the security lane cannot run yet.** Both errata are past the lane's two days (3.1 and
+3.4 days), and scripts/verify-rpm-update.sh confirms the erratum, its CVEs and the fixed builds - but the UBI
+repositories do not serve them: `microdnf upgrade` inside the pinned base leaves 1.21.1-10.el9_8.1 and
+4.16.1.3-40.el9 in place on arm64 and amd64, `microdnf upgrade krb5-libs-1.21.1-10.el9_9.2` answers "No package
+matches", the RPMs answer 404 on cdn-ubi.redhat.com, and the baseos repodata there was last modified 2026-11-11.
+The verifier's red flag is exactly that. So SECURITY_LANE_EVRS stays empty: pinning a build the repositories do
+not have would fail the image build (the 4.4.0 glibc case). When the repositories catch up, the change is the
+one line `ARG SECURITY_LANE_EVRS="krb5-libs-1.21.1-10.el9_9.2 rpm-4.16.1.3-43.el9_9 rpm-libs-4.16.1.3-43.el9_9"`
+after a clean verifier run - or a newer base that carries them.
+
+`scripts/verify-rpm-update.sh --advisory RHSA-2026:99715 krb5-libs-1.21.1-10.el9_9.2`:
+
+    == RHSA-2026:99715: Red Hat Security Advisory: krb5 security, bug fix, and enhancement update
+       released 2026-11-12T22:53:27+00:00 severity Important cves CVE-2026-107364,CVE-2026-107708,CVE-2026-107778,CVE-2026-107884,CVE-2026-111423,CVE-2026-112314,CVE-2026-112315,CVE-2026-112316,CVE-2026-112317,CVE-2026-112318,CVE-2026
+       age 3.1 days
+       fixed: krb5-libs-1.21.1-10.el9_9.2: aarch64, i686, ppc64le, s390x, x86_64
+    == registry.access.redhat.com/ubi9-minimal:9.9-1794467051@sha256:baafce2d34783a28b4a472779f304e97e00f9d35c99553bc53b068b14344d9a9: microdnf upgrade krb5-libs
+       krb5-libs-1.21.1-10.el9_8.1.aarch64: signature RSA/SHA256, Fri Oct  9 08:02:30 2026, Key ID 199e2f91fd431d51
+       vendor Red Hat, Inc., built Thu Oct  8 16:18:17 2026, source krb5-1.21.1-10.el9_8.1.src.rpm
+    RED FLAG: krb5-libs: the repositories carry krb5-libs-1.21.1-10.el9_8.1.aarch64, not krb5-libs-1.21.1-10.el9_9.2
+    1 red flag(s): read them before raising the package in deploy/Containerfile
+
+`scripts/verify-rpm-update.sh --advisory RHSA-2026:99593 rpm-4.16.1.3-43.el9_9 rpm-libs-4.16.1.3-43.el9_9`:
+
+    == RHSA-2026:99593: Red Hat Security Advisory: rpm security update
+       released 2026-11-12T14:37:45+00:00 severity Moderate cves CVE-2026-78367,CVE-2026-84837
+       age 3.4 days
+       fixed: rpm-4.16.1.3-43.el9_9: aarch64, ppc64le, s390x, src, x86_64
+       fixed: rpm-libs-4.16.1.3-43.el9_9: aarch64, i686, ppc64le, s390x, x86_64
+    == registry.access.redhat.com/ubi9-minimal:9.9-1794467051@sha256:baafce2d34783a28b4a472779f304e97e00f9d35c99553bc53b068b14344d9a9: microdnf upgrade rpm rpm-libs
+       rpm-4.16.1.3-40.el9.aarch64: signature RSA/SHA256, Mon Dec  1 08:31:28 2025, Key ID 199e2f91fd431d51
+       vendor Red Hat, Inc., built Fri Nov 21 15:55:08 2025, source rpm-4.16.1.3-40.el9.src.rpm
+       rpm-libs-4.16.1.3-40.el9.aarch64: signature RSA/SHA256, Mon Dec  1 08:31:28 2025, Key ID 199e2f91fd431d51
+       vendor Red Hat, Inc., built Fri Nov 21 15:55:08 2025, source rpm-4.16.1.3-40.el9.src.rpm
+    RED FLAG: rpm: the repositories carry rpm-4.16.1.3-40.el9.aarch64, not rpm-4.16.1.3-43.el9_9
+    RED FLAG: rpm-libs: the repositories carry rpm-libs-4.16.1.3-40.el9.aarch64, not rpm-libs-4.16.1.3-43.el9_9
+    2 red flag(s): read them before raising the package in deploy/Containerfile
+
+**VEX for both (vex/decisions.yaml), checked against Red Hat's text for every CVE and the 4.4.3 image.** The
+image has krb5-libs only (linked by libcurl-minimal, cyrus-sasl-lib and openssh-clients): no kadmind, krb5kdc,
+kadmin or kinit, no libkadm5 / libkdb5, no krb5-pkinit, no keytab; libgssrpc.so.4 is on disk and no installed
+package links it. Jacarium does no Kerberos or GSSAPI authentication and accepts none; the ssh client's Red Hat
+default offers GSSAPIAuthentication, which stops at acquiring credentials (no cache, no keytab). All 19 krb5 CVEs
+are not_affected: `vulnerable_code_not_present` where the code is in a daemon or library the image lacks
+(CVE-2026-112316 libkadm5, 112317 libkdb5, 112318 and 107884 kadmind, 107708 the KDC, 71200 the KDC's PKINIT
+plugin), `vulnerable_code_not_in_execute_path` where it is in libgssrpc or libkrb5 and nothing reaches it
+(112314, 112315, 112319-112323, 118380 in GSS-RPC; 119079 and 107364 in the ASN.1 decoder as a KDC runs it;
+71199, 107778, 111423 in what a ticket-accepting service checks). rpm: rpm-build is not installed (no rpmbuild),
+so both CVEs are `vulnerable_code_not_present`. None of these statements has a version bound and none is marked
+fixed: they hold for every release that ships these builds, 4.4.4 included, until the pin or a new base lands.
+
+**2. Decision (maintainer, 2026-11-16): exception to the 7-day rule for golang.org/x/crypto v0.59.0.** Published
+2026-11-11, 4.7 days old at the change (inside the seven-day rule until 2026-11-18, past the lane's two days).
+It clears GO-2026-5932 (the unmaintained x/crypto/openpgp, reported against every x/crypto before
+v0.58.1-0.20261009181718-2f1f834330b2). Caddy links no openpgp package - checked in `caddy build-info` of 4.4.3
+and of the new build, which now asserts it - so the releases before 4.4.4 are not_affected
+(`vulnerable_code_not_present`) and 4.4.4 is fixed. Raised like x/net: `ARG XCRYPTO_VERSION=v0.59.0`, a `go get`,
+and a build-info assert. `scripts/verify-go-module.sh golang.org/x/crypto v0.59.0`:
+
+    == golang.org/x/crypto v0.59.0
+       checksum database record 71189631
+       golang.org/x/crypto v0.59.0 h1:xS2jhqYbzNrpvkWP2YTDf4TJwBy3ykR03i8vFDxEc7c=
+       golang.org/x/crypto v0.59.0/go.mod h1:veDyUwATGs3c+vN3VfTbzViMGXeTBk3WyhBOkn+F/4U=
+       time 2026-11-11T07:23:42Z age 4.7
+       origin git https://go.googlesource.com/crypto ref refs/tags/v0.59.0 hash 6c966a7517bfc4fa0f268afb1fe663013ed932a5
+    no red flag
+
+The build records the same hash (`dep golang.org/x/crypto v0.59.0 h1:xS2jhqYbzNrpvkWP2YTDf4TJwBy3ykR03i8vFDxEc7c=`).
+
+**3. OpenTelemetry 1.47.0 for Caddy (no exception needed: published 2026-10-02, 44 days old).**
+GHSA-q7gw-24fr-5p69 / CVE-2026-128085 (published 2026-11-13; AttributeValueLengthLimit bypassed by U+FFFD
+runes) affects otel/sdk and otel/trace 1.46.0 and otel/sdk/log 0.22.0. The whole release set moves together so
+the graph has no skew: `OTEL_VERSION=v1.47.0` for otel, trace, metric, log, sdk, sdk/metric, sdk/log, the OTLP
+trace and metric exporters and the stdout trace / metric exporters; `OTEL_LOG_EXPORTERS_VERSION=v0.23.0`
+(otlploggrpc, otlploghttp, stdoutlog), `OTEL_PROMETHEUS_VERSION=v0.69.0`, `OTEL_CONTRIB_VERSION=v0.72.0` (otelhttp)
+- all of 2026-10-02; auto/sdk stays v1.2.1 (its latest). The build asserts the versions from `caddy build-info`
+and that no go.opentelemetry.io/otel module is left on another version. deploy/Caddyfile has no `tracing`
+directive and no exporter (admin off), so the SDK never records a span attribute or log record: not_affected
+before 4.4.4 (`vulnerable_code_not_in_execute_path`), fixed from 4.4.4. `scripts/verify-go-module.sh`:
+
+    == go.opentelemetry.io/otel/sdk v1.47.0
+       checksum database record 66335086
+       go.opentelemetry.io/otel/sdk v1.47.0 h1:zWXEr4j2lFefG87TU6Yg8a7ngfohIKFZHKp0Hf5hC6I=
+       go.opentelemetry.io/otel/sdk v1.47.0/go.mod h1:VUc24kiOeoGsxG8G9ULx3fWKvB7jMhnGE8Oi607lgR0=
+       time 2026-10-02T08:10:46Z age 44.7
+       origin git https://github.com/open-telemetry/opentelemetry-go ref refs/tags/sdk/v1.47.0 hash 66cfc9520e205b7d450183532772401bc2b6674c
+    no red flag
+    == go.opentelemetry.io/otel/sdk/log v1.47.0
+       checksum database record 66334645
+       go.opentelemetry.io/otel/sdk/log v1.47.0 h1:W4N/ZfgpkRRnmARnqYoQ6BrWA0mrj8IzVDNLlpmUJZY=
+       go.opentelemetry.io/otel/sdk/log v1.47.0/go.mod h1:Wu74Z2EmOKXi2FleSNAb0Hyau2G+r5kubSEMJw5aAMs=
+       time 2026-10-02T08:10:46Z age 44.7
+       origin git https://github.com/open-telemetry/opentelemetry-go ref refs/tags/sdk/log/v1.47.0 hash 66cfc9520e205b7d450183532772401bc2b6674c
+    no red flag
+    == go.opentelemetry.io/otel/trace v1.47.0
+       checksum database record 66337033
+       go.opentelemetry.io/otel/trace v1.47.0 h1:JOjX/Oci8K94QHddo+bbfya/Ai/nf6/dt9ZfrFNWSrM=
+       go.opentelemetry.io/otel/trace v1.47.0/go.mod h1:jNaSLa2PZEYFG6fRjJABAu+bw4FS08uDmPg28lTghu0=
+       time 2026-10-02T08:10:46Z age 44.7
+       origin git https://github.com/open-telemetry/opentelemetry-go ref refs/tags/trace/v1.47.0 hash 66cfc9520e205b7d450183532772401bc2b6674c
+    no red flag
+    == go.opentelemetry.io/otel v1.47.0
+       checksum database record 66334525
+       go.opentelemetry.io/otel v1.47.0 h1:j7ALJ/zgkS7Z6aeJW09p8VC9804bC+PpeTfCD4XPnOM=
+       go.opentelemetry.io/otel v1.47.0/go.mod h1:8wS9O2qfXrYrzp6hIF/HOYJJf/wIhFPhR2xLuP+iXQU=
+       time 2026-10-02T08:10:46Z age 44.7
+       origin git https://github.com/open-telemetry/opentelemetry-go ref refs/tags/v1.47.0 hash 66cfc9520e205b7d450183532772401bc2b6674c
+    no red flag
+    == go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0
+       checksum database record 66390962
+       go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0 h1:LxwW/9ctSCv+QkE/cLR7M91ZIkXNMqJtEMi1vCw9U8s=
+       go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0/go.mod h1:tOsftB4SslBwwErVEPaenU2RpThXWPIU8DoJHEC4dyw=
+       time 2026-10-02T16:25:28Z age 44.3
+       origin git https://github.com/open-telemetry/opentelemetry-go-contrib ref refs/tags/instrumentation/net/http/otelhttp/v0.72.0 hash 0c76f6137a2ceea80984d55e3de165924d823f71
+    no red flag
+
+**Why Grype's gate did not stop on these.** Grype does report GHSA-q7gw-24fr-5p69 on the three modules, as
+Medium - the gate fails on High and above with a fix, so a Medium passes by design. GO-2026-5932 it does not
+report at all: it is a Go vulnerability database entry with no GHSA / CVE alias, and Grype's Go matching comes
+from GitHub's advisories, while Clair also reads the Go database through OSV. That class (GO- ids without an
+alias) is outside the image gate; the lock-file job's OSV-Scanner reads the same data but has no go.mod to scan,
+since Caddy's module set only exists inside the build. A follow-up worth doing: export the built go.mod / go.sum
+(or `caddy build-info`) from the Caddy stage and run OSV-Scanner or govulncheck on it in the Scan workflow.

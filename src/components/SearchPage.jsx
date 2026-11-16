@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Edit, Loader, Timer, X, Copy, AlertCircle } from 'lucide-react';
 import { usePopupPosition } from '../hooks/usePopupPosition.js';
 import { getTemplates, getCategories, deleteTemplate, saveTemplate, updateTemplate, renameCategory } from '../templates/jqlTemplates';
@@ -8,7 +8,6 @@ import { useNotifications } from '../contexts/NotificationContext';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import ResizableSidebar from './ResizableSidebar';
 import { useMobile } from '../contexts/MobileContext';
-import { isMobileLayout } from '../utils/mobile';
 import MobilePageHeader from './mobile/MobilePageHeader';
 import EngineTemplateModal from './features/search/EngineTemplateModal';
 import EngineInputModal from './features/search/EngineInputModal';
@@ -224,25 +223,6 @@ export default function SearchPage({
     }
   }, [contextMenu.visible]);
 
-  // Reposition context menu after render using its actual measured size
-  useLayoutEffect(() => {
-    if (!contextMenu.visible || !contextMenuRef.current) return;
-    // on a phone the menu is a bottom sheet placed by the stylesheet (src/mobile.css), not by x/y
-    if (isMobileLayout()) return;
-    const menuRect = contextMenuRef.current.getBoundingClientRect();
-    const margin = 10;
-    let x = contextMenu.x;
-    let y = contextMenu.y;
-    if (menuRect.right > window.innerWidth - margin) {
-      x = Math.max(margin, x - (menuRect.right - window.innerWidth + margin));
-    }
-    if (menuRect.bottom > window.innerHeight - margin) {
-      y = Math.max(margin, y - (menuRect.bottom - window.innerHeight + margin));
-    }
-    if (x !== contextMenu.x || y !== contextMenu.y) {
-      setContextMenu((prev) => ({ ...prev, x, y }));
-    }
-  }, [contextMenu.visible, contextMenu.x, contextMenu.y]);
 
   async function loadTemplates() {
     const allTemplates = await getTemplates();

@@ -1,5 +1,6 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useShortcut } from '../shortcuts/useShortcut';
+import { usePopupPosition } from '../hooks/usePopupPosition.js';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import useSyncedOpenTabs from '../hooks/useSyncedOpenTabs';
 import { db as database } from '../db/database';
@@ -2817,26 +2818,10 @@ export default function DocumentsPage({
     }
   }, [showTabContextMenu]);
 
-  // Keep the tab menu on-screen: measure its actual rendered size once open and
-  // nudge left/up only if it truly overflows the viewport, instead of
-  // pre-guessing a worst-case size (which caused it to render far from the
-  // cursor for small menu variants).
-  useLayoutEffect(() => {
-    if (!showTabContextMenu || !tabContextMenuRef.current) return;
-    const menuRect = tabContextMenuRef.current.getBoundingClientRect();
-    const margin = 10;
-    let x = tabContextMenuPosition.x;
-    let y = tabContextMenuPosition.y;
-    if (menuRect.right > window.innerWidth - margin) {
-      x = Math.max(margin, x - (menuRect.right - window.innerWidth + margin));
-    }
-    if (menuRect.bottom > window.innerHeight - margin) {
-      y = Math.max(margin, y - (menuRect.bottom - window.innerHeight + margin));
-    }
-    if (x !== tabContextMenuPosition.x || y !== tabContextMenuPosition.y) {
-      setTabContextMenuPosition((prev) => ({ ...prev, x, y }));
-    }
-  }, [showTabContextMenu, tabContextMenuPosition.x, tabContextMenuPosition.y]);
+  // Inside the window through the shared popup placement (src/hooks/usePopupPosition.js): it measures the rendered
+  // menu and writes its left / top directly. Never position state set from a measurement: at a fractional layout
+  // scale the measured overflow never reaches zero and each pass sets a new position (React's update-depth error).
+  usePopupPosition(tabContextMenuRef, { open: showTabContextMenu, anchor: () => ({ left: tabContextMenuPosition.x, top: tabContextMenuPosition.y }), deps: [tabContextMenuPosition.x, tabContextMenuPosition.y] });
 
   // Close template context menu when clicking outside
   useEffect(() => {
@@ -2852,26 +2837,10 @@ export default function DocumentsPage({
     }
   }, [templateContextMenu.visible]);
 
-  // Keep the menu on-screen: measure its actual rendered size once open and
-  // nudge left/up only if it truly overflows the viewport, instead of
-  // pre-guessing a worst-case size (which caused it to render far from the
-  // cursor for small menu variants).
-  useLayoutEffect(() => {
-    if (!templateContextMenu.visible || !templateContextMenuRef.current) return;
-    const menuRect = templateContextMenuRef.current.getBoundingClientRect();
-    const margin = 10;
-    let x = templateContextMenu.x;
-    let y = templateContextMenu.y;
-    if (menuRect.right > window.innerWidth - margin) {
-      x = Math.max(margin, x - (menuRect.right - window.innerWidth + margin));
-    }
-    if (menuRect.bottom > window.innerHeight - margin) {
-      y = Math.max(margin, y - (menuRect.bottom - window.innerHeight + margin));
-    }
-    if (x !== templateContextMenu.x || y !== templateContextMenu.y) {
-      setTemplateContextMenu((prev) => ({ ...prev, x, y }));
-    }
-  }, [templateContextMenu.visible, templateContextMenu.x, templateContextMenu.y]);
+  // Inside the window through the shared popup placement (src/hooks/usePopupPosition.js): it measures the rendered
+  // menu and writes its left / top directly. Never position state set from a measurement: at a fractional layout
+  // scale the measured overflow never reaches zero and each pass sets a new position (React's update-depth error).
+  usePopupPosition(templateContextMenuRef, { open: templateContextMenu.visible, anchor: () => ({ left: templateContextMenu.x, top: templateContextMenu.y }), deps: [templateContextMenu.x, templateContextMenu.y] });
 
   // Split view drag handlers
   useEffect(() => {
